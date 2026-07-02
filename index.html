@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>スマホ水平器アプリ</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0; background: #1a1a1a; color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh;
+  }
+
+  /* 起動ボタン (iOSセンサー許可対応) */
+  #start-screen {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: #1a1a1a; display: flex; justify-content: center; align-items: center; z-index: 100;
+  }
+  #start-btn {
+    padding: 16px 32px; font-size: 20px; font-weight: bold; border: none;
+    border-radius: 12px; background: #007aff; color: white; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,122,255,0.4);
+  }
+
+  #app { display: none; width: 100%; height: 100%; position: relative; }
+
+  /* =========================================
+     寝かした状態（円形水平器）
+  ========================================= */
+  #flat-mode {
+    display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%;
+  }
+  .circle-outer {
+    width: 60vmin; height: 60vmin; max-width: 300px; max-height: 300px;
+    border: 3px solid rgba(255,255,255,0.8); border-radius: 50%;
+    position: relative; display: flex; justify-content: center; align-items: center;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+  }
+  .circle-inner {
+    width: 15vmin; height: 15vmin; max-width: 60px; max-height: 60px;
+    border: 2px solid #ff3b30; border-radius: 50%; position: absolute;
+  }
+  .crosshair-h { position: absolute; width: 100%; height: 1px; background: rgba(255,255,255,0.3); }
+  .crosshair-v { position: absolute; width: 1px; height: 100%; background: rgba(255,255,255,0.3); }
+  .bubble {
+    width: 12vmin; height: 12vmin; max-width: 48px; max-height: 48px;
+    background: radial-gradient(circle at 30% 30%, #4cd964, #228b22);
+    border-radius: 50%; position: absolute;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.4), inset -2px -2px 6px rgba(0,0,0,0.3);
+    transition: transform 0.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .flat-info {
+    margin-top: 40px; font-size: 24px; font-weight: bold; text-align: center; line-height: 1.5;
+    background: rgba(0,0,0,0.5); padding: 15px 30px; border-radius: 12px;
+  }
+
+  /* =========================================
+     立てた状態（水平線 ＋ アオリ）
+  ========================================= */
+  #upright-mode {
+    display: none; width: 100%; height: 100%; position: relative;
+  }
+  
+  /* 情報表示テキスト */
+  .upright-info {
+    position: absolute; top: 40px; width: 100%; display: flex; justify-content: space-around;
+    font-size: 22px; font-weight: bold; text-shadow: 1px 1px 4px rgba(0,0,0,0.8); z-index: 10;
+  }
+
+  /* 左端のライン (アオリ / 前後の傾き) */
+  .pitch-container {
+    position: absolute; left: 20px; top: 15%; width: 20px; height: 70%;
+    border-left: 2px solid rgba(255,255,255,0.5); border-right: 2px solid rgba(255,255,255,0.5);
+    display: flex; align-items: center; justify-content: center; z-index: 5;
+    background: rgba(255,255,255,0.05); border-radius: 10px;
+  }
+  .pitch-center-mark { width: 30px; height: 2px; background: #ff3b30; position: absolute; }
+  .pitch-indicator {
+    width: 36px; height: 6px; background: #4cd964; position: absolute;
+    border-radius: 3px; box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    transition: transform 0.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* 中央の水平線 (横の傾き) */
+  .horizon-container {
+    position: absolute; top: 50%; left: 15%; width: 70%; height: 2px;
+    background: rgba(255,255,255,0.2); transform-origin: center; z-index: 1;
+  }
+  .horizon-line {
+    width: 100%; height: 6px; background: #4cd964; position: absolute; top: -2px;
+    transform-origin: center; border-radius: 3px; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    transition: transform 0.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+</style>
+</head>
+<body>
+
+<div id="start-screen">
+  <button id="start-btn">水平器を起動する</button>
+</div>
+
+<div id="app">
+  <!-- 寝かせた状態 (円形水平器) -->
+  <div id="flat-mode">
+    <div class="circle-outer" id="flat-circle">
+      <div class="crosshair-h"></div>
+      <div class="crosshair-v"></div>
+      <div class="circle-inner"></div>
+      <div class="bubble" id="flat-bubble"></div>
+    </div>
+    <div class="flat-info">
+      前後: <span id="flat-pitch">0.0</span>°<br>
+      左右: <span id="flat-roll">0.0</span>°
+    </div>
+  </div>
+
+  <!-- 立てた状態 (水平線＋アオリ) -->
+  <div id="upright-mode">
+    <div class="upright-info">
+      <div>アオリ: <span id="upright-aori">0.0</span>°</div>
+      <div>水平: <span id="upright-horizon">0.0</span>°</div>
+    </div>
+    
+    <!-- 左端のアオリライン -->
+    <div class="pitch-container" id="pitch-container">
+      <div class="pitch-center-mark"></div>
+      <div class="pitch-indicator" id="pitch-bar"></div>
+    </div>
+
+    <!-- 画面中央の水平線 -->
+    <div class="horizon-container">
+      <div class="horizon-line" id="horizon-line"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const startBtn = document.getElementById('start-btn');
+  const startScreen = document.getElementById('start-screen');
+  const app = document.getElementById('app');
+  
+  const flatMode = document.getElementById('flat-mode');
+  const uprightMode = document.getElementById('upright-mode');
+  
+  // 寝かせた状態用の要素
+  const flatBubble = document.getElementById('flat-bubble');
+  const flatCircle = document.getElementById('flat-circle');
+  const flatPitchTxt = document.getElementById('flat-pitch');
+  const flatRollTxt = document.getElementById('flat-roll');
+  
+  // 立てた状態用の要素
+  const horizonLine = document.getElementById('horizon-line');
+  const pitchBar = document.getElementById('pitch-bar');
+  const pitchContainer = document.getElementById('pitch-container');
+  const uprightAoriTxt = document.getElementById('upright-aori');
+  const uprightHorizonTxt = document.getElementById('upright-horizon');
+
+  let isRunning = false;
+  let isUprightState = false; // モード切り替え用のヒステリシスフラグ
+
+  startBtn.addEventListener('click', async () => {
+    // iOS 13以降の許可リクエスト対応
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try {
+        const permissionState = await DeviceOrientationEvent.requestPermission();
+        if (permissionState === 'granted') {
+          initApp();
+        } else {
+          alert('センサーへのアクセスが拒否されました。設定から許可してください。');
+        }
+      } catch (error) {
+        alert('エラーが発生しました。HTTPS環境で実行してください。');
+      }
+    } else {
+      // Androidや古いiOSの場合
+      initApp();
+    }
+  });
+
+  function initApp() {
+    startScreen.style.display = 'none';
+    app.style.display = 'block';
+    window.addEventListener('deviceorientation', handleOrientation);
+    isRunning = true;
+  }
+
+  function handleOrientation(event) {
+    if (!isRunning) return;
+
+    let beta = event.beta;   // -180 〜 180 (前後の傾き)
+    let gamma = event.gamma; // -90 〜 90 (左右の傾き)
+
+    if (beta === null || gamma === null) return;
+
+    // 画面の向き(縦長/横長)に合わせて角度を正規化
+    let orientation = (screen.orientation || {}).angle || window.orientation || 0;
+    let pitch = beta;
+    let roll = gamma;
+
+    if (orientation === 90) {
+      pitch = -gamma;
+      roll = beta;
+    } else if (orientation === -90 || orientation === 270) {
+      pitch = gamma;
+      roll = -beta;
+    } else if (orientation === 180) {
+      pitch = -beta;
+      roll = -gamma;
+    }
+
+    // 傾きの最大値で「寝かせているか」「立てているか」を判定
+    const maxTilt = Math.max(Math.abs(pitch), Math.abs(roll));
+    
+    // ヒステリシス（モード切り替え時のチラつき防止）
+    if (!isUprightState && maxTilt > 45) {
+      isUprightState = true;
+    } else if (isUprightState && maxTilt < 35) {
+      isUprightState = false;
+    }
+
+    if (isUprightState) {
+      flatMode.style.display = 'none';
+      uprightMode.style.display = 'block';
+      updateUprightMode(pitch, roll);
+    } else {
+      flatMode.style.display = 'flex';
+      uprightMode.style.display = 'none';
+      updateFlatMode(pitch, roll);
+    }
+  }
+
+  // 寝かせた状態（円形水平器）の描画更新
+  function updateFlatMode(pitch, roll) {
+    flatPitchTxt.innerText = pitch.toFixed(1);
+    flatRollTxt.innerText = roll.toFixed(1);
+
+    // 最大表示角度（これ以上傾くと気泡が枠に当たる）
+    const maxAngle = 20;
+    
+    // 円の半径から気泡の半径を引いた移動可能範囲
+    const radius = (flatCircle.clientWidth / 2) - (flatBubble.clientWidth / 2);
+
+    // 傾きに合わせて気泡を移動（気泡は高い方へ移動するため、符号を反転）
+    let moveX = -(roll / maxAngle) * radius;
+    let moveY = -(pitch / maxAngle) * radius;
+
+    // 円の外に飛び出さないように制限
+    const distance = Math.sqrt(moveX * moveX + moveY * moveY);
+    if (distance > radius) {
+      moveX = (moveX / distance) * radius;
+      moveY = (moveY / distance) * radius;
+    }
+
+    flatBubble.style.transform = `translate(${moveX}px, ${moveY}px)`;
+  }
+
+  // 立てた状態（水平線＋アオリ）の描画更新
+  function updateUprightMode(pitch, roll) {
+    let aori = 0;
+    let horizon = 0;
+
+    // スマホをどの辺を底にして立てているかを判定
+    if (Math.abs(pitch) > Math.abs(roll)) {
+      // 縦置きベース
+      aori = pitch > 0 ? pitch - 90 : pitch + 90;
+      horizon = roll;
+    } else {
+      // 横置きベース (画面回転ロック時など)
+      aori = roll > 0 ? roll - 90 : roll + 90;
+      horizon = -pitch; 
+    }
+
+    uprightAoriTxt.innerText = aori.toFixed(1);
+    uprightHorizonTxt.innerText = horizon.toFixed(1);
+
+    // 1. 水平線の回転 (地面と平行を保つよう逆方向に回す)
+    horizonLine.style.transform = `rotate(${-horizon}deg)`;
+
+    // 2. 左端のアオリラインの上下移動
+    // アオリの最大表示角度を ±45度 とする
+    const maxAoriAngle = 45;
+    const maxTranslateY = pitchContainer.clientHeight / 2;
+    
+    let translateY = (aori / maxAoriAngle) * maxTranslateY;
+    
+    // 枠外に出ないよう制限
+    if (translateY > maxTranslateY) translateY = maxTranslateY;
+    if (translateY < -maxTranslateY) translateY = -maxTranslateY;
+
+    pitchBar.style.transform = `translateY(${translateY}px)`;
+  }
+</script>
+</body>
+</html>
