@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>V1.01スマホ水平器</title>
+<title>スマホ水平器アプリ（高精度版）</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -49,7 +49,6 @@
     background: radial-gradient(circle at 30% 30%, #4cd964, #228b22);
     border-radius: 50%; position: absolute;
     box-shadow: 0 4px 8px rgba(0,0,0,0.4), inset -2px -2px 6px rgba(0,0,0,0.3);
-    /* スムーズに動かすためのトランジション */
     transition: transform 0.05s linear;
   }
   .flat-info {
@@ -68,6 +67,9 @@
     position: absolute; top: 40px; width: 100%; display: flex; justify-content: space-around;
     font-size: 22px; font-weight: bold; text-shadow: 1px 1px 4px rgba(0,0,0,0.8); z-index: 10;
   }
+  .upright-info span {
+    transition: color 0.2s;
+  }
 
   /* 左端のライン (アオリ / 前後の傾き) */
   .pitch-container {
@@ -80,18 +82,25 @@
   .pitch-indicator {
     width: 36px; height: 6px; background: #4cd964; position: absolute;
     border-radius: 3px; box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-    transition: transform 0.05s linear;
+    transition: transform 0.05s linear, background-color 0.2s;
   }
 
-  /* 中央の水平線 (横の傾き) */
-  .horizon-container {
-    position: absolute; top: 50%; left: 15%; width: 70%; height: 2px;
-    background: rgba(255,255,255,0.2); transform-origin: center; z-index: 1;
+  /* 中央の水平線と十字の基準線 */
+  .upright-crosshair {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; justify-content: center; align-items: center; z-index: 1;
+  }
+  .crosshair-h-upright {
+    position: absolute; width: 80%; height: 2px; background: rgba(255,255,255,0.3);
+  }
+  .crosshair-v-upright {
+    position: absolute; width: 2px; height: 80%; background: rgba(255,255,255,0.3);
   }
   .horizon-line {
-    width: 100%; height: 6px; background: #4cd964; position: absolute; top: -2px;
-    transform-origin: center; border-radius: 3px; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
-    transition: transform 0.05s linear;
+    position: absolute; width: 60%; height: 6px; background: #4cd964;
+    border-radius: 3px; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    transition: transform 0.05s linear, background-color 0.2s;
+    transform-origin: center;
   }
 </style>
 </head>
@@ -126,7 +135,9 @@
       <div class="pitch-indicator" id="pitch-bar"></div>
     </div>
 
-    <div class="horizon-container">
+    <div class="upright-crosshair">
+      <div class="crosshair-h-upright"></div>
+      <div class="crosshair-v-upright"></div>
       <div class="horizon-line" id="horizon-line"></div>
     </div>
   </div>
@@ -153,6 +164,7 @@
 
   let isRunning = false;
   let isUprightState = false; 
+  let currentVisualRotation = 0; // スピン対策のための連続的な回転角度
 
   startBtn.addEventListener('click', async () => {
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -216,7 +228,7 @@
     const uxy = Math.sqrt(ux * ux + uy * uy);
     const absZ = Math.abs(uz);
 
-    // 4. スマホが寝ているか・立っているかを判定（Z軸ベクトルの強さで判定）
+    // 4. スマホが寝ているか・立っているかを判定
     if (!isUprightState && absZ < 0.6) {
       isUprightState = true;
     } else if (isUprightState && absZ > 0.8) {
@@ -228,12 +240,17 @@
       uprightMode.style.display = 'block';
       
       // 【立てた状態】
-      // 水平（画面の左右の傾き）
-      let horizonAngle = Math.atan2(ux, uy) * (180 / Math.PI);
+      // 画面の傾きを計算（縦持ち状態を0度基準にするため uy を反転）
+      let rawRoll = Math.atan2(ux, -uy) * (180 / Math.PI); 
+      
+      // 0〜90度に変換（水平が0度、垂直が90度になるようにする）
+      let absRoll = Math.abs(rawRoll);
+      let displayHorizon = absRoll > 90 ? 180 - absRoll : absRoll;
+
       // アオリ（画面の前後の傾き）
       let aoriAngle = Math.atan2(uz, uxy) * (180 / Math.PI);
 
-      updateUprightMode(horizonAngle, aoriAngle);
+      updateUprightMode(displayHorizon, aoriAngle, rawRoll);
     } else {
       flatMode.style.display = 'flex';
       uprightMode.style.display = 'none';
@@ -253,7 +270,6 @@
     const maxAngle = 20;
     const radius = (flatCircle.clientWidth / 2) - (flatBubble.clientWidth / 2);
 
-    // 高い方へ気泡が移動する
     let moveX = (roll / maxAngle) * radius;
     let moveY = -(pitch / maxAngle) * radius;
 
@@ -266,18 +282,37 @@
     flatBubble.style.transform = `translate(${moveX}px, ${moveY}px)`;
   }
 
-  function updateUprightMode(horizon, aori) {
+  function updateUprightMode(horizon, aori, rawRoll) {
     uprightAoriTxt.innerText = aori.toFixed(1);
     uprightHorizonTxt.innerText = horizon.toFixed(1);
 
-    // 1. 水平線の回転（水平を保つため逆方向に回す）
-    horizonLine.style.transform = `rotate(${-horizon}deg)`;
+    // ±1度の判定と色変更（オレンジ色でお知らせ）
+    let isPerfectHorizon = horizon <= 1.0;
+    let isPerfectVertical = Math.abs(horizon - 90) <= 1.0;
+    let horizonColor = (isPerfectHorizon || isPerfectVertical) ? "#ff9500" : "#4cd964";
+    
+    horizonLine.style.backgroundColor = horizonColor;
+    uprightHorizonTxt.style.color = horizonColor;
+
+    let isPerfectAori = Math.abs(aori) <= 1.0;
+    let aoriColor = isPerfectAori ? "#ff9500" : "#4cd964";
+    pitchBar.style.backgroundColor = aoriColor;
+    uprightAoriTxt.style.color = aoriColor;
+
+    // 1. 水平線の回転（180度反転時のスピンバグを防ぐため、最短距離で回転角度を加算する）
+    let targetRotation = -rawRoll;
+    let diff = targetRotation - currentVisualRotation;
+    
+    while (diff > 180) diff -= 360;
+    while (diff < -180) diff += 360;
+    
+    currentVisualRotation += diff;
+    horizonLine.style.transform = `rotate(${currentVisualRotation}deg)`;
 
     // 2. アオリラインの移動
     const maxAoriAngle = 45;
     const maxTranslateY = pitchContainer.clientHeight / 2;
     
-    // アオリ（上部が後ろに倒れる）が正の場合、気泡は上（マイナスY）に移動
     let translateY = -(aori / maxAoriAngle) * maxTranslateY;
     
     if (translateY > maxTranslateY) translateY = maxTranslateY;
