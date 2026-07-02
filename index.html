@@ -300,7 +300,7 @@
     uprightAoriTxt.style.color = aoriColor;
 
     // 1. 水平線の回転（180度反転時のスピンバグを防ぐため、最短距離で回転角度を加算する）
-    let targetRotation = -rawRoll;
+    let targetRotation = rawRoll;
     let diff = targetRotation - currentVisualRotation;
     
     while (diff > 180) diff -= 360;
