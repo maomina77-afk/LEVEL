@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>スマホ水平器アプリ</title>
+<title>V1.01スマホ水平器</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -49,7 +49,8 @@
     background: radial-gradient(circle at 30% 30%, #4cd964, #228b22);
     border-radius: 50%; position: absolute;
     box-shadow: 0 4px 8px rgba(0,0,0,0.4), inset -2px -2px 6px rgba(0,0,0,0.3);
-    transition: transform 0.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+    /* スムーズに動かすためのトランジション */
+    transition: transform 0.05s linear;
   }
   .flat-info {
     margin-top: 40px; font-size: 24px; font-weight: bold; text-align: center; line-height: 1.5;
@@ -63,7 +64,6 @@
     display: none; width: 100%; height: 100%; position: relative;
   }
   
-  /* 情報表示テキスト */
   .upright-info {
     position: absolute; top: 40px; width: 100%; display: flex; justify-content: space-around;
     font-size: 22px; font-weight: bold; text-shadow: 1px 1px 4px rgba(0,0,0,0.8); z-index: 10;
@@ -80,7 +80,7 @@
   .pitch-indicator {
     width: 36px; height: 6px; background: #4cd964; position: absolute;
     border-radius: 3px; box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-    transition: transform 0.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: transform 0.05s linear;
   }
 
   /* 中央の水平線 (横の傾き) */
@@ -91,7 +91,7 @@
   .horizon-line {
     width: 100%; height: 6px; background: #4cd964; position: absolute; top: -2px;
     transform-origin: center; border-radius: 3px; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
-    transition: transform 0.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: transform 0.05s linear;
   }
 </style>
 </head>
@@ -102,7 +102,6 @@
 </div>
 
 <div id="app">
-  <!-- 寝かせた状態 (円形水平器) -->
   <div id="flat-mode">
     <div class="circle-outer" id="flat-circle">
       <div class="crosshair-h"></div>
@@ -116,20 +115,17 @@
     </div>
   </div>
 
-  <!-- 立てた状態 (水平線＋アオリ) -->
   <div id="upright-mode">
     <div class="upright-info">
       <div>アオリ: <span id="upright-aori">0.0</span>°</div>
       <div>水平: <span id="upright-horizon">0.0</span>°</div>
     </div>
     
-    <!-- 左端のアオリライン -->
     <div class="pitch-container" id="pitch-container">
       <div class="pitch-center-mark"></div>
       <div class="pitch-indicator" id="pitch-bar"></div>
     </div>
 
-    <!-- 画面中央の水平線 -->
     <div class="horizon-container">
       <div class="horizon-line" id="horizon-line"></div>
     </div>
@@ -144,13 +140,11 @@
   const flatMode = document.getElementById('flat-mode');
   const uprightMode = document.getElementById('upright-mode');
   
-  // 寝かせた状態用の要素
   const flatBubble = document.getElementById('flat-bubble');
   const flatCircle = document.getElementById('flat-circle');
   const flatPitchTxt = document.getElementById('flat-pitch');
   const flatRollTxt = document.getElementById('flat-roll');
   
-  // 立てた状態用の要素
   const horizonLine = document.getElementById('horizon-line');
   const pitchBar = document.getElementById('pitch-bar');
   const pitchContainer = document.getElementById('pitch-container');
@@ -158,10 +152,9 @@
   const uprightHorizonTxt = document.getElementById('upright-horizon');
 
   let isRunning = false;
-  let isUprightState = false; // モード切り替え用のヒステリシスフラグ
+  let isUprightState = false; 
 
   startBtn.addEventListener('click', async () => {
-    // iOS 13以降の許可リクエスト対応
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
       try {
         const permissionState = await DeviceOrientationEvent.requestPermission();
@@ -174,7 +167,6 @@
         alert('エラーが発生しました。HTTPS環境で実行してください。');
       }
     } else {
-      // Androidや古いiOSの場合
       initApp();
     }
   });
@@ -189,64 +181,82 @@
   function handleOrientation(event) {
     if (!isRunning) return;
 
-    let beta = event.beta;   // -180 〜 180 (前後の傾き)
-    let gamma = event.gamma; // -90 〜 90 (左右の傾き)
-
+    let beta = event.beta;   // -180 〜 180
+    let gamma = event.gamma; // -90 〜 90
     if (beta === null || gamma === null) return;
 
-    // 画面の向き(縦長/横長)に合わせて角度を正規化
-    let orientation = (screen.orientation || {}).angle || window.orientation || 0;
-    let pitch = beta;
-    let roll = gamma;
+    // 1. センサーの角度から「上を向いている方向（UPベクトル）」を計算
+    const rad = Math.PI / 180;
+    const cb = Math.cos(beta * rad);
+    const sb = Math.sin(beta * rad);
+    const cg = Math.cos(gamma * rad);
+    const sg = Math.sin(gamma * rad);
 
-    if (orientation === 90) {
-      pitch = -gamma;
-      roll = beta;
-    } else if (orientation === -90 || orientation === 270) {
-      pitch = gamma;
-      roll = -beta;
-    } else if (orientation === 180) {
-      pitch = -beta;
-      roll = -gamma;
+    // 端末座標系でのUPベクトル
+    const ux_dev = -sg * cb; // 右方向
+    const uy_dev = -sb;      // 上方向
+    const uz_dev = cg * cb;  // 手前方向
+
+    // 2. 画面の向き（縦持ち・横持ち）を取得
+    let angle = 0;
+    if (screen.orientation && typeof screen.orientation.angle === 'number') {
+      angle = screen.orientation.angle;
+    } else if (typeof window.orientation === 'number') {
+      angle = window.orientation;
     }
+    const radAngle = angle * rad;
+    const ca = Math.cos(radAngle);
+    const sa = Math.sin(radAngle);
 
-    // 傾きの最大値で「寝かせているか」「立てているか」を判定
-    const maxTilt = Math.max(Math.abs(pitch), Math.abs(roll));
-    
-    // ヒステリシス（モード切り替え時のチラつき防止）
-    if (!isUprightState && maxTilt > 45) {
+    // 3. UPベクトルを画面の向きに合わせて回転（補正）
+    let ux = ux_dev * ca - uy_dev * sa; // 画面の右方向
+    let uy = ux_dev * sa + uy_dev * ca; // 画面の上方向
+    let uz = uz_dev;                    // 画面の手前方向
+
+    const uxy = Math.sqrt(ux * ux + uy * uy);
+    const absZ = Math.abs(uz);
+
+    // 4. スマホが寝ているか・立っているかを判定（Z軸ベクトルの強さで判定）
+    if (!isUprightState && absZ < 0.6) {
       isUprightState = true;
-    } else if (isUprightState && maxTilt < 35) {
+    } else if (isUprightState && absZ > 0.8) {
       isUprightState = false;
     }
 
     if (isUprightState) {
       flatMode.style.display = 'none';
       uprightMode.style.display = 'block';
-      updateUprightMode(pitch, roll);
+      
+      // 【立てた状態】
+      // 水平（画面の左右の傾き）
+      let horizonAngle = Math.atan2(ux, uy) * (180 / Math.PI);
+      // アオリ（画面の前後の傾き）
+      let aoriAngle = Math.atan2(uz, uxy) * (180 / Math.PI);
+
+      updateUprightMode(horizonAngle, aoriAngle);
     } else {
       flatMode.style.display = 'flex';
       uprightMode.style.display = 'none';
-      updateFlatMode(pitch, roll);
+      
+      // 【寝かせた状態】
+      let pitchAngle = Math.atan2(uy, Math.abs(uz)) * (180 / Math.PI);
+      let rollAngle = Math.atan2(ux, Math.abs(uz)) * (180 / Math.PI);
+      
+      updateFlatMode(pitchAngle, rollAngle);
     }
   }
 
-  // 寝かせた状態（円形水平器）の描画更新
   function updateFlatMode(pitch, roll) {
     flatPitchTxt.innerText = pitch.toFixed(1);
     flatRollTxt.innerText = roll.toFixed(1);
 
-    // 最大表示角度（これ以上傾くと気泡が枠に当たる）
     const maxAngle = 20;
-    
-    // 円の半径から気泡の半径を引いた移動可能範囲
     const radius = (flatCircle.clientWidth / 2) - (flatBubble.clientWidth / 2);
 
-    // 傾きに合わせて気泡を移動（気泡は高い方へ移動するため、符号を反転）
-    let moveX = -(roll / maxAngle) * radius;
+    // 高い方へ気泡が移動する
+    let moveX = (roll / maxAngle) * radius;
     let moveY = -(pitch / maxAngle) * radius;
 
-    // 円の外に飛び出さないように制限
     const distance = Math.sqrt(moveX * moveX + moveY * moveY);
     if (distance > radius) {
       moveX = (moveX / distance) * radius;
@@ -256,36 +266,20 @@
     flatBubble.style.transform = `translate(${moveX}px, ${moveY}px)`;
   }
 
-  // 立てた状態（水平線＋アオリ）の描画更新
-  function updateUprightMode(pitch, roll) {
-    let aori = 0;
-    let horizon = 0;
-
-    // スマホをどの辺を底にして立てているかを判定
-    if (Math.abs(pitch) > Math.abs(roll)) {
-      // 縦置きベース
-      aori = pitch > 0 ? pitch - 90 : pitch + 90;
-      horizon = roll;
-    } else {
-      // 横置きベース (画面回転ロック時など)
-      aori = roll > 0 ? roll - 90 : roll + 90;
-      horizon = -pitch; 
-    }
-
+  function updateUprightMode(horizon, aori) {
     uprightAoriTxt.innerText = aori.toFixed(1);
     uprightHorizonTxt.innerText = horizon.toFixed(1);
 
-    // 1. 水平線の回転 (地面と平行を保つよう逆方向に回す)
+    // 1. 水平線の回転（水平を保つため逆方向に回す）
     horizonLine.style.transform = `rotate(${-horizon}deg)`;
 
-    // 2. 左端のアオリラインの上下移動
-    // アオリの最大表示角度を ±45度 とする
+    // 2. アオリラインの移動
     const maxAoriAngle = 45;
     const maxTranslateY = pitchContainer.clientHeight / 2;
     
-    let translateY = (aori / maxAoriAngle) * maxTranslateY;
+    // アオリ（上部が後ろに倒れる）が正の場合、気泡は上（マイナスY）に移動
+    let translateY = -(aori / maxAoriAngle) * maxTranslateY;
     
-    // 枠外に出ないよう制限
     if (translateY > maxTranslateY) translateY = maxTranslateY;
     if (translateY < -maxTranslateY) translateY = -maxTranslateY;
 
