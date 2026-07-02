@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>高精度水準器</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font-family: sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  #app { width: 100%; height: 100%; position: relative; }
+  
+  /* 共通UI */
+  .label { position: absolute; font-size: 16px; color: #888; z-index: 20; }
+  .value { font-size: 32px; font-weight: bold; color: #fff; }
+  
+  /* 水平線・垂直線 */
+  .cross-line { position: absolute; background: #444; z-index: 1; }
+  .active-line { background: #4cd964; transition: background 0.2s; z-index: 2; }
+  
+  /* 起動画面 */
+  #overlay { position: absolute; top:0; left:0; width:100%; height:100%; display:flex; justify-content:center; align-items:center; background:#111; z-index:100; }
+  button { padding: 20px 40px; font-size: 18px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="overlay"><button id="start">起動する</button></div>
+<div id="app">
+  <div id="display" style="padding: 20px;">
+    水平: <span id="h-val" class="value">0</span>°<br>
+    垂直: <span id="v-val" class="value">0</span>°
+  </div>
+  <div id="lines"></div>
+</div>
+
+<script>
+const hVal = document.getElementById('h-val');
+const vVal = document.getElementById('v-val');
+
+document.getElementById('start').onclick = () => {
+  document.getElementById('overlay').style.display = 'none';
+  window.addEventListener('deviceorientation', handleOrientation);
+};
+
+function handleOrientation(e) {
+  // beta: 前後の傾き(-180~180), gamma: 左右の傾き(-90~90)
+  let beta = e.beta;
+  let gamma = e.gamma;
+
+  // 補正処理: 画面の向きに合わせて角度を0~90の範囲に正規化
+  let horizon = gamma; // 左右
+  let vertical = beta - 90; // 立てた時を基準にする
+
+  // ±1度以内の判定（色変更）
+  const isHStable = Math.abs(horizon) < 1;
+  const isVStable = Math.abs(vertical) < 1;
+  
+  hVal.style.color = isHStable ? '#ff9500' : '#fff';
+  vVal.style.color = isVStable ? '#ff9500' : '#fff';
+  
+  hVal.innerText = horizon.toFixed(1);
+  vVal.innerText = vertical.toFixed(1);
+
+  // ここに描画ロジック（Canvas推奨だが簡易的にDOMで表現）
+  // 常にグレーの十字線を表示しつつ、水平垂直に近づくと緑色に変化
+  drawLines(horizon, vertical, isHStable, isVStable);
+}
+
+function drawLines(h, v, isH, isV) {
+  // ※実際のDOM描画処理は、画面サイズに合わせて 
+  //   div要素の style.transform = `rotate(${h}deg)` 等で実装します
+  //   複雑な線を描く場合は Canvas API を使用するとより綺麗です。
+}
+</script>
+</body>
+</html>
